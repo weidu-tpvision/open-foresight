@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenForesight | On-Device Meeting Intelligence</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%22><text y=%2226%22 font-size=%2228%22>🔭</text></svg>">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              500: '#10b981',
+              600: '#059669',
+              900: '#064e3b',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #18181b; }
+    ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+    .pulse-dot {
+      animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.1); }
+    }
+    .prose strong { color: #f4f4f5; font-weight: 600; }
+    .prose em { color: #a1a1aa; font-style: italic; }
+    .prose ul { list-style-type: disc; margin-left: 1.25rem; }
+    .prose li { margin-bottom: 0.5rem; }
+    .highlight-flash {
+      animation: flashBorder 2s ease-out;
+    }
+    @keyframes flashBorder {
+      0% { background-color: rgba(16, 185, 129, 0.3); border-color: #10b981; }
+      100% { background-color: #18181b; border-color: rgba(63, 63, 70, 0.8); }
+    }
+  </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen flex flex-col font-sans antialiased selection:bg-emerald-500 selection:text-white">
+
+  <!-- Top Navigation Header -->
+  <header class="border-b border-zinc-800 bg-zinc-900/60 backdrop-blur sticky top-0 z-50 px-6 py-3.5 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20 text-white font-bold text-lg">
+        🔭
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="font-bold text-base tracking-tight text-white">OpenForesight</h1>
+          <span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> NVIDIA GPU (CUDA)
+          </span>
+          <span id="modelBadge" class="px-2 py-0.5 text-xs font-medium rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            Gemma 4 (e4b) + EmbeddingGemma 2 (768-D)
+          </span>
+        </div>
+        <p class="text-xs text-zinc-400">100% On-Device Meeting & Knowledge Intelligence &bull; Zero Cloud Egress</p>
+      </div>
+    </div>
+
+    <!-- Live Status Pill, Audio Waveform Visualizer & Actions -->
+    <div class="flex items-center gap-3">
+      <!-- Google Foresight Audio Waveform Visualizer -->
+      <div id="waveformPill" class="px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-800 flex items-center gap-2.5 shadow-sm">
+        <div class="flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-zinc-600 transition-colors" id="waveformDot"></span>
+          <span id="waveformLabel" class="text-[11px] font-medium text-zinc-400">Audio Inactive</span>
+        </div>
+        <canvas id="waveformCanvas" width="84" height="18" class="rounded block"></canvas>
+      </div>
+
+      <div id="statusPill" class="px-3.5 py-1.5 rounded-full bg-zinc-800 border border-zinc-700/60 text-xs font-medium text-zinc-300 flex items-center gap-2 shadow-sm">
+        <span class="w-2 h-2 rounded-full bg-zinc-500" id="statusDot"></span>
+        <span id="statusText">System Ready</span>
+        <span id="timerText" class="hidden text-zinc-400 font-mono">00:00</span>
+      </div>
+
+      <div class="h-4 w-px bg-zinc-800"></div>
+
+      <a href="/docs" target="_blank" class="text-xs text-zinc-400 hover:text-zinc-200 transition flex items-center gap-1">
+        <span>Swagger API Docs</span>
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+      </a>
+    </div>
+  </header>
+
+  <!-- Controls Bar -->
+  <div class="border-b border-zinc-800/80 bg-zinc-900/30 px-6 py-3 flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-3 flex-1 max-w-xl">
+      <input type="text" id="sessionTitle" value="Architecture & Planning Review" 
+        class="bg-zinc-900 border border-zinc-800 rounded-lg px-3.5 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 w-full"
+        placeholder="Enter meeting title..." />
+    </div>
+
+    <div class="flex items-center gap-3">
+      <!-- Device info tags -->
+      <div class="text-xs text-zinc-400 flex items-center gap-2 bg-zinc-900/90 px-3 py-1.5 rounded-lg border border-zinc-800">
+        <span class="text-zinc-500">Inputs:</span>
+        <span id="detectedMic" class="text-zinc-300">Detecting mic...</span>
+        <span class="text-zinc-700">&bull;</span>
+        <span id="detectedSink" class="text-zinc-300">Detecting loopback...</span>
+      </div>
+
+      <!-- Start/Stop Buttons -->
+      <button id="btnStart" onclick="startMeeting()" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs tracking-wide shadow-md shadow-emerald-900/20 transition flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>
+        <span>Start Meeting</span>
+      </button>
+
+      <button id="btnStop" onclick="stopMeeting()" class="hidden px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs tracking-wide shadow-md shadow-rose-900/20 transition flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clip-rule="evenodd"/></svg>
+        <span>Stop Meeting</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Main Split-Screen Studio -->
+  <main class="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-0 overflow-hidden">
+    
+    <!-- Left Pane: Live Verbatim Transcript Stream -->
+    <section class="border-r border-zinc-800 flex flex-col h-[calc(100vh-125px)] bg-zinc-950">
+      <div class="p-4 border-b border-zinc-800/80 flex items-center justify-between bg-zinc-900/20">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-semibold text-zinc-200">Live Verbatim Transcript</span>
+          <span id="segmentCount" class="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">0 segments</span>
+        </div>
+        <div class="flex items-center gap-2 text-xs text-zinc-500">
+          <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span> Local Mic
+          <span class="inline-block w-2 h-2 rounded-full bg-amber-500 ml-2"></span> Remote Output
+        </div>
+      </div>
+
+      <!-- Scrolling Transcript List -->
+      <div id="transcriptList" class="flex-1 p-5 overflow-y-auto space-y-3.5">
+        <div id="emptyState" class="h-full flex flex-col items-center justify-center text-center p-8 text-zinc-500">
+          <div class="w-12 h-12 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-3 text-zinc-400 text-2xl">
+            🎙️
+          </div>
+          <h3 class="text-sm font-medium text-zinc-300">No meeting in progress</h3>
+          <p class="text-xs text-zinc-500 max-w-sm mt-1">
+            Click <strong class="text-zinc-300">Start Meeting</strong> above. Speak into your microphone or play meeting audio through speakers. Transcripts appear here in real-time.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Pane: Shorthand Notes, Minutes & Live Assistant -->
+    <section class="flex flex-col h-[calc(100vh-125px)] bg-zinc-900/10">
+      <!-- Tabs Header -->
+      <div class="p-3 border-b border-zinc-800/80 flex items-center justify-between bg-zinc-900/30">
+        <div class="flex items-center gap-2">
+          <div class="flex bg-zinc-900 p-1 rounded-lg border border-zinc-800 text-xs">
+            <button id="tabRawBtn" onclick="switchNoteTab('raw')" class="px-3 py-1 rounded-md bg-zinc-800 text-white font-medium transition">
+              Raw Shorthand
+            </button>
+            <button id="tabEnrichedBtn" onclick="switchNoteTab('enriched')" class="px-3 py-1 rounded-md text-zinc-400 hover:text-white transition flex items-center gap-1.5">
+              <span>✨ Executive Minutes</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
+            </button>
+            <button id="tabAssistantBtn" onclick="switchNoteTab('assistant')" class="px-3 py-1 rounded-md text-zinc-400 hover:text-white transition flex items-center gap-1.5">
+              <span>💬 Live Assistant</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button id="btnEnrich" onclick="enrichNotes()" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-medium text-xs tracking-wide shadow-md shadow-purple-900/20 transition flex items-center gap-1.5">
+            <span id="enrichSpinner" class="hidden animate-spin">⏳</span>
+            <span id="enrichBtnText">✨ Enrich with Gemma 4</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Tab Content Area -->
+      <div class="p-5 flex-1 flex flex-col gap-4 overflow-y-auto">
+        
+        <!-- Tab 1: Raw Shorthand View -->
+        <div id="rawNotesTab" class="flex-1 flex flex-col">
+          <div class="flex items-center justify-between mb-1.5 text-xs text-zinc-400">
+            <span>Type hurried bullets (keystrokes are automatically bound to conversation time):</span>
+            <span id="noteTimestamp" class="text-zinc-500 font-mono">T_note: --:--</span>
+          </div>
+          <textarea id="notesArea" oninput="onNoteInput()"
+            class="flex-1 bg-zinc-900/80 border border-zinc-800 rounded-xl p-4 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 resize-none font-mono leading-relaxed"
+            placeholder="- auth race condition, bob by thurs&#10;- failover db replica sync delay&#10;- increase p99 memory headroom to 16G"></textarea>
+        </div>
+
+        <!-- Tab 2: Enriched Minutes View (Markdown Rendered) -->
+        <div id="enrichedNotesTab" class="hidden flex-1 flex flex-col bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-5 overflow-y-auto">
+          <div class="flex items-center justify-between pb-3 mb-4 border-b border-zinc-800">
+            <span class="text-xs font-semibold uppercase tracking-wider text-purple-400">Grounded Synthesis &bull; Gemma 4</span>
+            <span class="text-xs text-zinc-500 font-mono">Strict Provenance</span>
+          </div>
+          <div id="enrichedContent" class="prose prose-invert prose-sm max-w-none text-zinc-200 leading-relaxed font-sans">
+            <p class="text-zinc-500 italic text-sm">No notes enriched yet. Type bullets in Raw Shorthand and click "✨ Enrich with Gemma 4".</p>
+          </div>
+        </div>
+
+        <!-- Tab 3: Live Assistant (RAG Chat View) -->
+        <div id="assistantTab" class="hidden flex-1 flex flex-col gap-3">
+          <!-- Knowledge base status indicator -->
+          <div class="flex items-center justify-between p-3 rounded-xl bg-zinc-900/80 border border-zinc-800 text-xs">
+            <div class="flex items-center gap-2">
+              <span class="text-emerald-400 font-bold">📁 Indexed Docs:</span>
+              <span id="indexedDocsCount" class="text-zinc-300">Scanning docs/ folder...</span>
+            </div>
+            <span class="text-zinc-500 font-mono">EmbeddingGemma 2 (768-D)</span>
+          </div>
+
+          <!-- Q&A Conversation Thread -->
+          <div id="assistantMessages" class="flex-1 bg-zinc-950 p-4 rounded-xl border border-zinc-800/80 overflow-y-auto space-y-4 min-h-[220px]">
+            <div class="p-3.5 rounded-lg bg-zinc-900/70 border border-zinc-800/60 text-xs text-zinc-300">
+              <strong class="text-emerald-400">👋 Live Assistant Ready:</strong> Ask questions about local documents (e.g. <em>"What is the failover policy?"</em>) or discussion in this meeting.
+            </div>
+          </div>
+
+          <!-- Question Input Box -->
+          <div class="flex items-center gap-2">
+            <input type="text" id="assistantInput" onkeydown="if(event.key==='Enter') askAssistant()"
+              placeholder="Ask anything about docs or meeting dialogue..."
+              class="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3.5 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500/50" />
+            <button onclick="askAssistant()" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs shadow-md transition flex items-center gap-1">
+              <span>Ask</span>
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Temporal Window Inspector Drawer -->
+        <div id="windowDrawer" class="border border-zinc-800 rounded-xl p-3.5 bg-zinc-900/40">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-semibold text-zinc-300">Correlated Conversation Window</span>
+              <span id="windowRange" class="text-xs text-zinc-500 font-mono">[--ms, --ms]</span>
+            </div>
+            <button onclick="inspectWindow()" class="text-xs text-zinc-400 hover:text-zinc-200 underline">
+              Update Window
+            </button>
+          </div>
+          <div id="windowContent" class="text-xs text-zinc-400 bg-zinc-950 p-2.5 rounded-lg border border-zinc-900 max-h-32 overflow-y-auto font-mono">
+            Type notes to preview the correlated 60s transcript window.
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    let currentSessionId = null;
+    let ws = null;
+    let timerInterval = null;
+    let sessionStartTime = null;
+    let lastKeystrokeOffsetMs = 0;
+    let segmentCounter = 0;
+    let noteLineTimestamps = {}; // Maps line index -> timestamp ms
+
+    // Real-Time Audio Waveform Visualizer (Google Foresight Style)
+    let audioContext = null;
+    let analyserNode = null;
+    let audioStream = null;
+    let animFrameId = null;
+    let isVisualizerActive = false;
+    let lastAudioSpikeTime = 0;
+
+    const waveformCanvas = document.getElementById('waveformCanvas');
+    const waveCtx = waveformCanvas ? waveformCanvas.getContext('2d') : null;
+    const NUM_BARS = 14;
+    let barHeights = new Array(NUM_BARS).fill(2);
+
+    function drawIdleWaveform() {
+      if (!waveCtx || isVisualizerActive) return;
+      waveCtx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+      const w = waveformCanvas.width;
+      const h = waveformCanvas.height;
+      const barW = 3;
+      const spacing = (w - (NUM_BARS * barW)) / (NUM_BARS - 1);
+      const time = Date.now() / 800;
+
+      for (let i = 0; i < NUM_BARS; i++) {
+        const x = i * (barW + spacing);
+        const idleH = 2 + Math.sin(time + i * 0.4) * 1.5;
+        const y = (h - idleH) / 2;
+        waveCtx.fillStyle = '#3f3f46'; // zinc-700
+        waveCtx.beginPath();
+        waveCtx.roundRect(x, y, barW, idleH, 1.5);
+        waveCtx.fill();
+      }
+      if (!isVisualizerActive) {
+        animFrameId = requestAnimationFrame(drawIdleWaveform);
+      }
+    }
+
+    async function startAudioWaveform() {
+      isVisualizerActive = true;
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+
+      const dot = document.getElementById('waveformDot');
+      const label = document.getElementById('waveformLabel');
+      if (dot) dot.className = 'w-2 h-2 rounded-full bg-emerald-400 pulse-dot';
+      if (label) {
+        label.innerText = 'Live Audio';
+        label.className = 'text-[11px] font-medium text-emerald-400';
+      }
+
+      try {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const source = audioContext.createMediaStreamSource(audioStream);
+          analyserNode = audioContext.createAnalyser();
+          analyserNode.fftSize = 64;
+          analyserNode.smoothingTimeConstant = 0.8;
+          source.connect(analyserNode);
+        }
+      } catch (err) {
+        console.warn('Browser mic capture not enabled, using synchronized event waveform simulation:', err);
+      }
+
+      renderWaveformLoop();
+    }
+
+    function renderWaveformLoop() {
+      if (!isVisualizerActive || !waveCtx) return;
+
+      waveCtx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+      const w = waveformCanvas.width;
+      const h = waveformCanvas.height;
+      const barW = 3;
+      const spacing = (w - (NUM_BARS * barW)) / (NUM_BARS - 1);
+
+      let freqData = new Uint8Array(32);
+      if (analyserNode) {
+        analyserNode.getByteFrequencyData(freqData);
+      }
+
+      const now = Date.now();
+      const timeSinceSpike = (now - lastAudioSpikeTime) / 1000;
+      const spikeFactor = Math.max(0, 1 - timeSinceSpike * 2);
+
+      for (let i = 0; i < NUM_BARS; i++) {
+        let targetHeight = 2;
+        if (analyserNode && audioStream) {
+          const binVal = freqData[i + 1] || 0;
+          targetHeight = Math.max(2, (binVal / 255) * (h - 2));
+        } else {
+          const wave = Math.sin(now / 150 + i * 0.6) * 3;
+          targetHeight = 3 + wave + (spikeFactor * 10 * Math.sin(i * 0.5 + now / 80));
+          targetHeight = Math.max(2, Math.min(h - 2, targetHeight));
+        }
+
+        barHeights[i] += (targetHeight - barHeights[i]) * 0.35;
+
+        const x = i * (barW + spacing);
+        const barH = Math.max(2, barHeights[i]);
+        const y = (h - barH) / 2;
+
+        const grad = waveCtx.createLinearGradient(0, y, 0, y + barH);
+        grad.addColorStop(0, '#34d399'); // emerald-400
+        grad.addColorStop(1, '#0d9488'); // teal-600
+
+        waveCtx.fillStyle = grad;
+        waveCtx.beginPath();
+        waveCtx.roundRect(x, y, barW, barH, 1.5);
+        waveCtx.fill();
+      }
+
+      animFrameId = requestAnimationFrame(renderWaveformLoop);
+    }
+
+    function triggerWaveformSpike() {
+      lastAudioSpikeTime = Date.now();
+    }
+
+    function stopAudioWaveform() {
+      isVisualizerActive = false;
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+
+      if (audioStream) {
+        audioStream.getTracks().forEach(t => t.stop());
+        audioStream = null;
+      }
+      if (audioContext && audioContext.state !== 'closed') {
+        audioContext.close();
+        audioContext = null;
+      }
+      analyserNode = null;
+
+      const dot = document.getElementById('waveformDot');
+      const label = document.getElementById('waveformLabel');
+      if (dot) dot.className = 'w-2 h-2 rounded-full bg-zinc-600';
+      if (label) {
+        label.innerText = 'Audio Inactive';
+        label.className = 'text-[11px] font-medium text-zinc-400';
+      }
+
+      drawIdleWaveform();
+    }
+
+    function seekTranscriptTimestamp(timeStr) {
+      const items = document.querySelectorAll('#transcriptList [data-timestamp]');
+      let targetEl = null;
+      for (const el of items) {
+        if (el.dataset.timestamp === timeStr) {
+          targetEl = el;
+          break;
+        }
+      }
+      if (!targetEl && items.length > 0) {
+        const parts = timeStr.split(':').map(Number);
+        const targetSec = (parts[0] || 0) * 60 + (parts[1] || 0);
+        let minDiff = Infinity;
+        for (const el of items) {
+          const eParts = (el.dataset.timestamp || '0:0').split(':').map(Number);
+          const diff = Math.abs(((eParts[0] || 0) * 60 + (eParts[1] || 0)) - targetSec);
+          if (diff < minDiff) {
+            minDiff = diff;
+            targetEl = el;
+          }
+        }
+      }
+
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        targetEl.classList.remove('highlight-flash');
+        void targetEl.offsetWidth;
+        targetEl.classList.add('highlight-flash');
+      }
+    }
+
+    // Load initial system telemetry, models, and knowledge documents
+    async function loadTelemetry() {
+      try {
+        const [devResp, modelResp, docsResp] = await Promise.all([
+          fetch('/api/audio/devices'),
+          fetch('/api/models'),
+          fetch('/api/knowledge/documents')
+        ]);
+        const devData = await devResp.json();
+        const sources = devData.devices.filter(d => d.class === 'Audio/Source');
+        const sinks = devData.devices.filter(d => d.class === 'Audio/Sink');
+
+        document.getElementById('detectedMic').innerText = sources.length > 0 ? sources[0].description : 'Default Mic';
+        document.getElementById('detectedSink').innerText = sinks.length > 0 ? sinks[0].description : 'HDMI Loopback';
+
+        const modelData = await modelResp.json();
+        if (modelData.llm) {
+          document.getElementById('modelBadge').innerText = `${modelData.llm} + ${modelData.embedding} (${modelData.embedding_dimensions}-D)`;
+        }
+
+        const docsData = await docsResp.json();
+        const docNames = docsData.documents.map(d => d.file_name).join(', ') || 'None';
+        document.getElementById('indexedDocsCount').innerText = `${docsData.total_documents} docs indexed (${docNames})`;
+      } catch (e) {
+        console.error('Failed to load telemetry', e);
+      }
+    }
+    loadTelemetry();
+    drawIdleWaveform();
+
+    // Start Meeting
+    async function startMeeting() {
+      const title = document.getElementById('sessionTitle').value || 'Untitled Meeting';
+      try {
+        const resp = await fetch('/api/sessions/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: title })
+        });
+        const data = await resp.json();
+        currentSessionId = data.session_id;
+        sessionStartTime = Date.now();
+        noteLineTimestamps = {};
+
+        // UI state update
+        document.getElementById('btnStart').classList.add('hidden');
+        document.getElementById('btnStop').classList.remove('hidden');
+        document.getElementById('statusDot').className = 'w-2 h-2 rounded-full bg-rose-500 pulse-dot';
+        document.getElementById('statusText').innerText = 'Recording Live';
+        document.getElementById('timerText').classList.remove('hidden');
+
+        // Clear empty state
+        const list = document.getElementById('transcriptList');
+        list.innerHTML = '';
+        segmentCounter = 0;
+        updateSegmentCount();
+
+        // Start timer
+        startTimer();
+
+        // Start Google-style live audio waveform visualizer
+        startAudioWaveform();
+
+        // Connect WebSocket
+        connectWebSocket(currentSessionId);
+      } catch (err) {
+        alert('Failed to start session: ' + err);
+      }
+    }
+
+    // Stop Meeting
+    async function stopMeeting() {
+      if (!currentSessionId) return;
+      try {
+        await fetch(`/api/sessions/${currentSessionId}/stop`, { method: 'POST' });
+
+        if (ws) {
+          ws.close();
+          ws = null;
+        }
+
+        clearInterval(timerInterval);
+
+        // Stop audio visualizer
+        stopAudioWaveform();
+
+        // UI state update
+        document.getElementById('btnStart').classList.remove('hidden');
+        document.getElementById('btnStop').classList.add('hidden');
+        document.getElementById('statusDot').className = 'w-2 h-2 rounded-full bg-emerald-500';
+        document.getElementById('statusText').innerText = 'Session Completed';
+      } catch (err) {
+        console.error('Failed to stop meeting', err);
+      }
+    }
+
+    // Timer loop
+    function startTimer() {
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        const elapsedSec = Math.floor((Date.now() - sessionStartTime) / 1000);
+        const mm = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
+        const ss = String(elapsedSec % 60).padStart(2, '0');
+        document.getElementById('timerText').innerText = `${mm}:${ss}`;
+      }, 1000);
+    }
+
+    // Connect WebSocket
+    function connectWebSocket(sessionId) {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/transcripts/${sessionId}`;
+      ws = new WebSocket(wsUrl);
+
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'transcript_segment') {
+          appendTranscript(msg);
+        }
+      };
+
+      ws.onerror = (e) => console.error('WebSocket Error', e);
+    }
+
+    // Append transcript item to DOM
+    function appendTranscript(seg) {
+      const list = document.getElementById('transcriptList');
+      const empty = document.getElementById('emptyState');
+      if (empty) empty.remove();
+
+      segmentCounter++;
+      updateSegmentCount();
+
+      const item = document.createElement('div');
+      item.id = `seg-${seg.start_ms}`;
+      item.dataset.timestamp = seg.timestamp_formatted || '00:00';
+      item.className = 'p-3 rounded-xl bg-zinc-900 border border-zinc-800/80 shadow-sm flex flex-col gap-1.5 transition-all duration-200 hover:border-zinc-700';
+
+      triggerWaveformSpike();
+
+      const isLocal = seg.speaker_channel === 'local';
+      const badgeBg = isLocal ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+      const speaker = isLocal ? 'Me' : 'Remote Participant';
+
+      item.innerHTML = `
+        <div class="flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded-full border text-[11px] font-medium ${badgeBg}">${speaker}</span>
+            <span class="text-zinc-500 font-mono text-[11px]">[${seg.timestamp_formatted || '00:00'}]</span>
+          </div>
+          <span class="text-[10px] text-zinc-600 font-mono">${seg.start_ms}ms</span>
+        </div>
+        <p class="text-sm text-zinc-200 leading-normal pl-1">${escapeHtml(seg.text)}</p>
+      `;
+
+      list.appendChild(item);
+      list.scrollTop = list.scrollHeight;
+    }
+
+    function updateSegmentCount() {
+      document.getElementById('segmentCount').innerText = `${segmentCounter} segments`;
+    }
+
+    // Note Input & Keystroke Timestamping
+    function onNoteInput() {
+      if (sessionStartTime) {
+        lastKeystrokeOffsetMs = Date.now() - sessionStartTime;
+        const mm = String(Math.floor(lastKeystrokeOffsetMs / 60000)).padStart(2, '0');
+        const ss = String(Math.floor((lastKeystrokeOffsetMs % 60000) / 1000)).padStart(2, '0');
+        document.getElementById('noteTimestamp').innerText = `T_note: ${mm}:${ss} (${lastKeystrokeOffsetMs}ms)`;
+
+        // Associate current active line with offset
+        const textarea = document.getElementById('notesArea');
+        const cursor = textarea.selectionStart;
+        const textBefore = textarea.value.substring(0, cursor);
+        const activeLineIndex = (textBefore.match(/\n/g) || []).length;
+        if (!(activeLineIndex in noteLineTimestamps)) {
+          noteLineTimestamps[activeLineIndex] = lastKeystrokeOffsetMs;
+        }
+      }
+    }
+
+    // Query Temporal Window for Active Note
+    async function inspectWindow() {
+      if (!currentSessionId) {
+        alert('Please start a session first!');
+        return;
+      }
+      try {
+        const resp = await fetch(`/api/sessions/${currentSessionId}/window?center_ms=${lastKeystrokeOffsetMs}`);
+        const data = await resp.json();
+        document.getElementById('windowRange').innerText = data.window;
+
+        const box = document.getElementById('windowContent');
+        if (data.segments && data.segments.length > 0) {
+          box.innerHTML = data.segments.map(s => `<div><strong>[${s.speaker_label}]</strong> (${s.start_ms}ms): ${escapeHtml(s.text)}</div>`).join('<br>');
+        } else {
+          box.innerText = 'No dialogue recorded in the [-45s, +15s] temporal window yet.';
+        }
+      } catch (e) {
+        console.error('Window query error', e);
+      }
+    }
+
+    // Enrich Notes using Gemma 4
+    async function enrichNotes() {
+      const rawNotes = document.getElementById('notesArea').value.trim();
+      if (!rawNotes) {
+        alert('Please write some shorthand notes first!');
+        return;
+      }
+      if (!currentSessionId) {
+        const r = await fetch('/api/sessions/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: 'Ad-hoc Note Synthesis' })
+        });
+        const d = await r.json();
+        currentSessionId = d.session_id;
+      }
+
+      const spinner = document.getElementById('enrichSpinner');
+      const btnText = document.getElementById('enrichBtnText');
+      spinner.classList.remove('hidden');
+      btnText.innerText = 'Synthesizing with Gemma 4...';
+
+      try {
+        const resp = await fetch(`/api/sessions/${currentSessionId}/notes/enrich`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            raw_notes: rawNotes,
+            note_timestamps: noteLineTimestamps,
+            model: 'gemma4:e4b'
+          })
+        });
+
+        const data = await resp.json();
+        const markdown = data.enriched_markdown;
+
+        // Render Markdown into Enriched tab with clickable citation pills
+        let enrichedHtml = marked.parse(markdown);
+        enrichedHtml = enrichedHtml.replace(
+          /\[ref:\s*(\d{1,2}:\d{2})\]/g,
+          '<button onclick="seekTranscriptTimestamp(\'$1\')" class="inline-flex items-center gap-1 px-2 py-0.5 my-0.5 rounded-md font-mono text-[11px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/30 hover:bg-purple-500/20 hover:border-purple-400 cursor-pointer transition shadow-sm" title="Jump to $1 in transcript"><span>⏱️ $1</span></button>'
+        );
+        document.getElementById('enrichedContent').innerHTML = enrichedHtml;
+        switchNoteTab('enriched');
+      } catch (err) {
+        alert('Enrichment failed: ' + err);
+      } finally {
+        spinner.classList.add('hidden');
+        btnText.innerText = '✨ Enrich with Gemma 4';
+      }
+    }
+
+    // Ask Live Assistant (RAG Chat)
+    async function askAssistant() {
+      const input = document.getElementById('assistantInput');
+      const query = input.value.trim();
+      if (!query) return;
+
+      const msgBox = document.getElementById('assistantMessages');
+
+      // Append user query bubble
+      const userDiv = document.createElement('div');
+      userDiv.className = 'p-3 rounded-lg bg-zinc-800 text-xs text-white self-end border border-zinc-700/80';
+      userDiv.innerHTML = `<span class="text-zinc-400 font-bold">You:</span> ${escapeHtml(query)}`;
+      msgBox.appendChild(userDiv);
+      input.value = '';
+
+      // Append typing indicator
+      const botDiv = document.createElement('div');
+      botDiv.className = 'p-3.5 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-300 space-y-2';
+      botDiv.innerHTML = `<span class="text-emerald-400 font-semibold animate-pulse">Thinking with Gemma 4 & EmbeddingGemma 2...</span>`;
+      msgBox.appendChild(botDiv);
+      msgBox.scrollTop = msgBox.scrollHeight;
+
+      try {
+        const resp = await fetch('/api/assistant/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: query,
+            session_id: currentSessionId
+          })
+        });
+        const data = await resp.json();
+
+        // Build citations pills
+        let citationsHtml = '';
+        if (data.citations && data.citations.length > 0) {
+          citationsHtml = `<div class="pt-2 border-t border-zinc-800/80 flex flex-wrap gap-1.5 items-center">
+            <span class="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Citations:</span>`;
+          for (const c of data.citations) {
+            const isDoc = c.source_type === 'document';
+            const badgeColor = isDoc ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+            const icon = isDoc ? '📄' : '🎙️';
+            citationsHtml += `<span class="px-2 py-0.5 rounded-full border text-[11px] font-mono ${badgeColor}" title="${escapeHtml(c.snippet)}">
+              ${icon} ${escapeHtml(c.source_label)}
+            </span>`;
+          }
+          citationsHtml += `</div>`;
+        }
+
+        botDiv.innerHTML = `
+          <div class="prose prose-invert prose-xs text-zinc-200">${marked.parse(data.answer_markdown)}</div>
+          ${citationsHtml}
+        `;
+      } catch (err) {
+        botDiv.innerHTML = `<span class="text-rose-400">Error querying assistant: ${err}</span>`;
+      }
+      msgBox.scrollTop = msgBox.scrollHeight;
+    }
+
+    function switchNoteTab(tab) {
+      const rawTab = document.getElementById('rawNotesTab');
+      const enrichedTab = document.getElementById('enrichedNotesTab');
+      const assistantTab = document.getElementById('assistantTab');
+      const windowDrawer = document.getElementById('windowDrawer');
+      const rawBtn = document.getElementById('tabRawBtn');
+      const enrichedBtn = document.getElementById('tabEnrichedBtn');
+      const assistantBtn = document.getElementById('tabAssistantBtn');
+
+      rawTab.classList.add('hidden');
+      enrichedTab.classList.add('hidden');
+      assistantTab.classList.add('hidden');
+
+      rawBtn.className = 'px-3 py-1 rounded-md text-zinc-400 hover:text-white transition';
+      enrichedBtn.className = 'px-3 py-1 rounded-md text-zinc-400 hover:text-white transition flex items-center gap-1.5';
+      assistantBtn.className = 'px-3 py-1 rounded-md text-zinc-400 hover:text-white transition flex items-center gap-1.5';
+
+      if (tab === 'raw') {
+        rawTab.classList.remove('hidden');
+        windowDrawer.classList.remove('hidden');
+        rawBtn.className = 'px-3 py-1 rounded-md bg-zinc-800 text-white font-medium transition';
+      } else if (tab === 'enriched') {
+        enrichedTab.classList.remove('hidden');
+        windowDrawer.classList.remove('hidden');
+        enrichedBtn.className = 'px-3 py-1 rounded-md bg-purple-600/30 text-purple-300 border border-purple-500/30 font-medium transition flex items-center gap-1.5';
+      } else if (tab === 'assistant') {
+        assistantTab.classList.remove('hidden');
+        windowDrawer.classList.add('hidden');
+        assistantBtn.className = 'px-3 py-1 rounded-md bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 font-medium transition flex items-center gap-1.5';
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.innerText = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

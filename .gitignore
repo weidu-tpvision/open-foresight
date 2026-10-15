@@ -1,0 +1,76 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Databases & Session Recordings
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Audio / Media Dumps
+*.wav
+*.pcm
+*.mp3
+*.ogg
+*.flac
+
+# Logs
+*.log
+logs/
+
+# IDE & OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Internal Agent & Developer Collaboration Docs (Planning, Reviews, Learning, Reports)
+FORESIGHT_REPORT.md
+NVIDIA_SPARK_FORESIGHT_IMPLEMENTATION_PLAN.md
+*_REPORT.md
+*REPORT*.md
+*_PLAN*.md
+*PLAN*.md
+*REVIEW*.md
+*LEARNING*.md
+planning/
+reviews/
+
