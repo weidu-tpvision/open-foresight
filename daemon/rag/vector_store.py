@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Optional, Sequence, AsyncIterator
+from contextlib import asynccontextmanager
 import aiosqlite
 import numpy as np
 
@@ -43,6 +45,13 @@ class VectorStore:
         self.embed_client = embedding_client or EmbeddingGemmaClient()
         self.chunker = chunker or DocumentChunker()
 
+    @asynccontextmanager
+    async def connect(self) -> AsyncIterator[aiosqlite.Connection]:
+        """Open an aiosqlite connection with foreign keys enabled."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("PRAGMA foreign_keys = ON;")
+            yield db
+
     async def index_file(self, file_path: str | Path) -> dict:
         """Parse, chunk, embed, and store a document in the vector store."""
         path = Path(file_path).resolve()
@@ -56,8 +65,8 @@ class VectorStore:
         # Unique document ID derived from canonical path
         doc_id = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
 
-        # Chunk the document
-        chunks = self.chunker.chunk_file(path)
+        # Chunk the document in a worker thread (avoids blocking event loop on PDF parsing)
+        chunks = await asyncio.to_thread(self.chunker.chunk_file, path)
         if not chunks:
             logger.warning(f"No text extracted from {path}")
             return {"document_id": doc_id, "file_name": path.name, "chunks_indexed": 0}
@@ -66,7 +75,7 @@ class VectorStore:
         texts_to_embed = [c.text for c in chunks]
         embeddings = await self.embed_client.embed_texts(texts_to_embed)
 
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self.connect() as db:
             # Insert or replace document metadata
             await db.execute(
                 """
@@ -174,7 +183,7 @@ class VectorStore:
 
         # 2. Fetch all chunk vectors and metadata
         results: list[SearchResult] = []
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self.connect() as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 """
@@ -224,7 +233,7 @@ class VectorStore:
 
     async def list_documents(self) -> list[dict]:
         """List all indexed documents with statistics."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self.connect() as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM documents ORDER BY indexed_at DESC"
@@ -234,7 +243,7 @@ class VectorStore:
 
     async def delete_document(self, doc_id: str) -> bool:
         """Remove a document and all its chunks from the vector store."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self.connect() as db:
             cursor = await db.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
             await db.commit()
             return cursor.rowcount > 0

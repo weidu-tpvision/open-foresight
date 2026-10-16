@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 import torch
@@ -15,7 +16,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
-STATIC_INDEX_PATH = Path(__file__).resolve().parent / "static" / "index.html"
+from fastapi.staticfiles import StaticFiles
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+STATIC_INDEX_PATH = STATIC_DIR / "index.html"
 
 from daemon.audio.capture import discover_audio_nodes
 from daemon.asr.engine import ASREngine
@@ -77,9 +81,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -124,7 +136,7 @@ async def health_check():
 @app.get("/api/audio/devices")
 async def get_audio_devices():
     """Enumerate PipeWire audio sources and sinks."""
-    nodes = discover_audio_nodes()
+    nodes = await asyncio.to_thread(discover_audio_nodes)
     return {
         "devices": [
             {
@@ -303,14 +315,14 @@ async def enrich_session_notes(session_id: str, req: EnrichNotesRequest):
     if not raw_notes:
         raise HTTPException(status_code=400, detail="No notes provided to enrich.")
 
-    # Override model if requested
-    if req.model:
-        enricher.llm.model = req.model
+    # Pass model override per-request without mutating global client
+    target_model = req.model or enricher.llm.model
 
     enriched_markdown = await enricher.enrich_meeting_notes(
         session_id=session_id,
         raw_notes=raw_notes,
         note_timestamps=req.note_timestamps,
+        model=target_model,
     )
 
     # Persist enriched output to DB
@@ -326,7 +338,7 @@ async def enrich_session_notes(session_id: str, req: EnrichNotesRequest):
 
     return {
         "session_id": session_id,
-        "model_used": enricher.llm.model,
+        "model_used": target_model,
         "enriched_markdown": enriched_markdown,
     }
 
@@ -348,9 +360,13 @@ class AssistantChatRequest(BaseModel):
 @app.post("/api/knowledge/index")
 async def index_knowledge_path(req: IndexKnowledgeRequest):
     """Index a file or folder into the 768-D VectorStore."""
-    target_path = Path(req.path)
+    target_path = Path(req.path).resolve()
     if not target_path.exists():
         raise HTTPException(status_code=404, detail="Path does not exist")
+
+    # Reject system root or root dir traversal
+    if target_path in [Path("/"), Path("/etc"), Path("/var"), Path("/root")]:
+        raise HTTPException(status_code=403, detail="Indexing restricted system directories is not permitted.")
 
     if target_path.is_file():
         res = await vector_store.index_file(target_path)

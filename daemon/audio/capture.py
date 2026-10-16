@@ -185,7 +185,11 @@ class PipeWireAudioStream:
         if self.process:
             try:
                 self.process.terminate()
-                await self.process.wait()
+                try:
+                    await asyncio.wait_for(self.process.wait(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    self.process.kill()
+                    await self.process.wait()
             except Exception:
                 pass
             self.process = None
@@ -206,7 +210,7 @@ class DualChannelCaptureManager:
     ):
         self.session_id = session_id
         self.session_start_epoch_ms = session_start_epoch_ms
-        self.audio_queue: asyncio.Queue[AudioPacket] = asyncio.Queue()
+        self.audio_queue: asyncio.Queue[AudioPacket] = asyncio.Queue(maxsize=500)
 
         # If not explicitly provided, discover system defaults
         nodes = discover_audio_nodes()

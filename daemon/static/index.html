@@ -4,8 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OpenForesight | On-Device Meeting Intelligence</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="/static/vendor/tailwind.min.js"></script>
+  <script src="/static/vendor/marked.min.js"></script>
+  <script src="/static/vendor/purify.min.js"></script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%22><text y=%2226%22 font-size=%2228%22>🔭</text></svg>">
   <script>
     tailwind.config = {
@@ -424,11 +425,22 @@
       }
       if (!targetEl && items.length > 0) {
         const parts = timeStr.split(':').map(Number);
-        const targetSec = (parts[0] || 0) * 60 + (parts[1] || 0);
+        let targetSec = 0;
+        if (parts.length === 3) {
+          targetSec = (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+        } else {
+          targetSec = (parts[0] || 0) * 60 + (parts[1] || 0);
+        }
         let minDiff = Infinity;
         for (const el of items) {
           const eParts = (el.dataset.timestamp || '0:0').split(':').map(Number);
-          const diff = Math.abs(((eParts[0] || 0) * 60 + (eParts[1] || 0)) - targetSec);
+          let eSec = 0;
+          if (eParts.length === 3) {
+            eSec = (eParts[0] || 0) * 3600 + (eParts[1] || 0) * 60 + (eParts[2] || 0);
+          } else {
+            eSec = (eParts[0] || 0) * 60 + (eParts[1] || 0);
+          }
+          const diff = Math.abs(eSec - targetSec);
           if (diff < minDiff) {
             minDiff = diff;
             targetEl = el;
@@ -683,10 +695,10 @@
         const data = await resp.json();
         const markdown = data.enriched_markdown;
 
-        // Render Markdown into Enriched tab with clickable citation pills
-        let enrichedHtml = marked.parse(markdown);
+        // Render Markdown into Enriched tab with sanitized HTML and clickable citation pills
+        let enrichedHtml = DOMPurify.sanitize(marked.parse(markdown));
         enrichedHtml = enrichedHtml.replace(
-          /\[ref:\s*(\d{1,2}:\d{2})\]/g,
+          /\[ref:\s*(\d{1,2}:\d{2}(?::\d{2})?)\]/g,
           '<button onclick="seekTranscriptTimestamp(\'$1\')" class="inline-flex items-center gap-1 px-2 py-0.5 my-0.5 rounded-md font-mono text-[11px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/30 hover:bg-purple-500/20 hover:border-purple-400 cursor-pointer transition shadow-sm" title="Jump to $1 in transcript"><span>⏱️ $1</span></button>'
         );
         document.getElementById('enrichedContent').innerHTML = enrichedHtml;
@@ -749,7 +761,7 @@
         }
 
         botDiv.innerHTML = `
-          <div class="prose prose-invert prose-xs text-zinc-200">${marked.parse(data.answer_markdown)}</div>
+          <div class="prose prose-invert prose-xs text-zinc-200">${DOMPurify.sanitize(marked.parse(data.answer_markdown))}</div>
           ${citationsHtml}
         `;
       } catch (err) {

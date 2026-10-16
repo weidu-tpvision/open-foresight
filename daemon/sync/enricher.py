@@ -54,6 +54,7 @@ class ShorthandEnricher:
         session_id: str,
         note_text: str,
         note_timestamp_ms: int,
+        model: Optional[str] = None,
     ) -> EnrichedBullet:
         """Enrich a single shorthand bullet using its 60-second temporal audio window."""
         window_segments = await self.repository.get_temporal_window(
@@ -75,7 +76,7 @@ No dialogue was spoken during the surrounding window. Clean up and format this n
 
             try:
                 expansion = await self.llm.generate(
-                    prompt=prompt, system_prompt=SYSTEM_PROMPT
+                    prompt=prompt, system_prompt=SYSTEM_PROMPT, model=model
                 )
             except Exception:
                 expansion = f"- **{note_text.lstrip('-* ')}** *(Ref: {formatted_time})*"
@@ -112,7 +113,7 @@ Synthesize the shorthand note into an executive meeting bullet point strictly gr
 
         try:
             expansion = await self.llm.generate(
-                prompt=user_prompt, system_prompt=SYSTEM_PROMPT
+                prompt=user_prompt, system_prompt=SYSTEM_PROMPT, model=model
             )
         except Exception as e:
             logger.error(f"Gemma 4 expansion failed: {e}")
@@ -129,14 +130,16 @@ Synthesize the shorthand note into an executive meeting bullet point strictly gr
         self,
         session_id: str,
         raw_notes: str,
-        note_timestamps: Optional[dict[int, int]] = None,
+        note_timestamps: Optional[dict[Any, int]] = None,
+        model: Optional[str] = None,
     ) -> str:
         """
         Takes multi-line shorthand notes and maps each line to its timestamp offset.
-        Returns unified executive meeting minutes.
+        Returns unified executive meeting minutes while preserving user line indexing.
         """
-        lines = [line.strip() for line in raw_notes.splitlines() if line.strip()]
-        if not lines:
+        raw_lines = raw_notes.splitlines()
+        non_empty_indices = [i for i, line in enumerate(raw_lines) if line.strip()]
+        if not non_empty_indices:
             return "No notes provided to enrich."
 
         session = await self.repository.get_session(session_id)
@@ -152,20 +155,22 @@ Synthesize the shorthand note into an executive meeting bullet point strictly gr
 
         enriched_sections: list[str] = []
 
-        for idx, line in enumerate(lines):
-            # Resolve timestamp: from dictionary or evenly distribute across session duration
-            if note_timestamps and str(idx) in note_timestamps:
-                ts_ms = note_timestamps[str(idx)]
-            elif note_timestamps and idx in note_timestamps:
-                ts_ms = note_timestamps[idx]
+        for line_idx in non_empty_indices:
+            line_text = raw_lines[line_idx].strip()
+            # Resolve timestamp using the exact original line index from the editor
+            if note_timestamps and str(line_idx) in note_timestamps:
+                ts_ms = note_timestamps[str(line_idx)]
+            elif note_timestamps and line_idx in note_timestamps:
+                ts_ms = note_timestamps[line_idx]
             else:
                 # Approximate evenly across session
-                ts_ms = int((idx / max(1, len(lines))) * session_duration_ms)
+                ts_ms = int((line_idx / max(1, len(raw_lines))) * session_duration_ms)
 
             bullet = await self.enrich_single_note(
                 session_id=session_id,
-                note_text=line,
+                note_text=line_text,
                 note_timestamp_ms=ts_ms,
+                model=model,
             )
             enriched_sections.append(bullet.enriched_markdown)
 

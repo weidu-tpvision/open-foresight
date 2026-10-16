@@ -114,7 +114,8 @@ class LiveSession:
         self, seg: SpeechSegment, speaker_label: str
     ) -> None:
         """Transcribe speech burst and commit to DB and WebSocket clients."""
-        chunks = self.asr_engine.transcribe(
+        chunks = await asyncio.to_thread(
+            self.asr_engine.transcribe,
             audio_pcm=seg.audio_pcm,
             base_start_ms=seg.start_ms,
         )

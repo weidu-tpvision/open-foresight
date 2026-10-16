@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import os
 import aiosqlite
-from typing import Optional, Any
+from typing import Optional, Any, AsyncIterator
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent.parent / "foresight.db"
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
@@ -15,12 +16,19 @@ class DatabaseRepository:
     def __init__(self, db_path: str | Path = DEFAULT_DB_PATH):
         self.db_path = str(db_path)
 
+    @asynccontextmanager
+    async def connect(self) -> AsyncIterator[aiosqlite.Connection]:
+        """Open an aiosqlite connection with foreign keys enabled."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("PRAGMA foreign_keys = ON;")
+            yield db
+
     async def initialize(self) -> None:
         """Create database schema if not already initialized."""
         with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
             schema_sql = f.read()
 
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self.connect() as db:
             await db.executescript(schema_sql)
             await db.commit()
 
@@ -36,7 +44,7 @@ class DatabaseRepository:
         if started_at is None:
             started_at = int(time.time() * 1000)
 
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self.connect() as db:
             db.row_factory = aiosqlite.Row
             await db.execute(
                 """
@@ -65,7 +73,7 @@ class DatabaseRepository:
         if ended_at is None:
             ended_at = int(time.time() * 1000)
 
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self.connect() as db:
             cursor = await db.execute(
                 """
                 UPDATE sessions
@@ -79,7 +87,7 @@ class DatabaseRepository:
 
     async def get_session(self, session_id: str) -> Optional[dict[str, Any]]:
         """Retrieve session details by ID."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self.connect() as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM sessions WHERE id = ?", (session_id,)
@@ -89,7 +97,7 @@ class DatabaseRepository:
 
     async def list_sessions(self) -> list[dict[str, Any]]:
         """List all sessions ordered by start time descending."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self.connect() as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM sessions ORDER BY started_at DESC"
@@ -108,7 +116,7 @@ class DatabaseRepository:
         confidence: float = 1.0,
     ) -> int:
         """Insert a single timestamped transcription segment."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self.connect() as db:
             cursor = await db.execute(
                 """
                 INSERT INTO transcript_segments (
@@ -147,7 +155,7 @@ class DatabaseRepository:
 
         query += " ORDER BY start_ms ASC"
 
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self.connect() as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(query, params) as cursor:
                 rows = await cursor.fetchall()
@@ -183,7 +191,7 @@ class DatabaseRepository:
         import time
 
         now_ms = int(time.time() * 1000)
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self.connect() as db:
             await db.execute(
                 """
                 INSERT INTO notes (id, session_id, created_at_ms, updated_at_ms, raw_text, enriched_text, status)
@@ -208,7 +216,7 @@ class DatabaseRepository:
 
     async def get_notes(self, session_id: str) -> list[dict[str, Any]]:
         """Retrieve notes for a session ordered by creation offset."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self.connect() as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT * FROM notes WHERE session_id = ? ORDER BY created_at_ms ASC",
