@@ -8,6 +8,7 @@ import time
 from typing import Any, Optional
 from dataclasses import asdict
 
+import numpy as np
 from daemon.audio.capture import AudioPacket, DualChannelCaptureManager, discover_audio_nodes
 from daemon.audio.vad import VADSegmenter, SpeechSegment
 from daemon.asr.engine import ASREngine
@@ -85,14 +86,36 @@ class LiveSession:
         self._worker_task = asyncio.create_task(self._process_audio_loop())
         logger.info(f"LiveSession {self.session_id} started successfully.")
 
+        # Audio level metering state
+        self._last_level_broadcast_time = 0.0
+
     async def _process_audio_loop(self) -> None:
-        """Consume raw audio packets from capture queue, run VAD and ASR."""
+        """Consume raw audio packets from capture queue, run VAD and ASR, and emit level telemetry."""
         try:
             while self._running:
                 packet = await self.capture_manager.audio_queue.get()
                 channel = packet.channel
                 vad = self.vad_local if channel == "local" else self.vad_remote
                 speaker_label = "Me" if channel == "local" else "Remote"
+
+                # Compute RMS audio amplitude level for waveform telemetry
+                if self._active_connections and len(packet.pcm_bytes) >= 2:
+                    now = time.time()
+                    if now - self._last_level_broadcast_time >= 0.08:  # ~12.5 Hz update
+                        self._last_level_broadcast_time = now
+                        pcm_arr = np.frombuffer(packet.pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+                        rms = float(np.sqrt(np.mean(pcm_arr**2)))
+                        # Scale to approximate peak normalized range [0.0, 1.0]
+                        norm_level = min(1.0, max(0.0, rms * 4.5))
+                        asyncio.create_task(
+                            self.broadcast(
+                                {
+                                    "type": "audio_level",
+                                    "channel": channel,
+                                    "level": norm_level,
+                                }
+                            )
+                        )
 
                 segments: list[SpeechSegment] = vad.process_pcm_bytes(
                     pcm_bytes=packet.pcm_bytes,

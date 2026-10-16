@@ -193,7 +193,7 @@ curl -X POST http://localhost:8000/api/assistant/chat \
 | **Phase 1: Dual Audio & ASR** | **Completed ✅** | PipeWire loopback tap + USB mic, Silero VAD, Whisper CUDA ASR, SQLite WAL persistence, WebSocket broadcasting. |
 | **Phase 2: Shorthand Engine** | **Completed ✅** | Monotonic keystroke timestamps, $[T-45\text{s}, T+15\text{s}]$ window slicing, Gemma 4 grounded minute expansion with `[ref: MM:SS]`. |
 | **Phase 3: Local Knowledge RAG** | **Completed ✅** | Watchdog file observer, Markdown/PDF chunker, EmbeddingGemma 2 (768-D), SQLite VectorStore, Live Assistant dual-grounded chat. |
-| **Phase 4: Ambient Desktop UX** | **In Progress 🔄** | Split-screen Web Studio operational. Upcoming: floating system tray/pill widget and audio playback seekers on citation click. |
+| **Phase 4: Ambient Desktop UX** | **Completed ✅** | Split-screen Web Studio, server-side PipeWire RMS metering, zero-permission audio visualizer, multi-session transcript RAG. |
 
 ---
 

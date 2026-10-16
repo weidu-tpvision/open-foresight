@@ -308,6 +308,9 @@
       }
     }
 
+    let serverAudioLevel = 0;
+    let serverAudioChannel = 'local';
+
     async function startAudioWaveform() {
       isVisualizerActive = true;
       if (animFrameId) cancelAnimationFrame(animFrameId);
@@ -316,22 +319,8 @@
       const label = document.getElementById('waveformLabel');
       if (dot) dot.className = 'w-2 h-2 rounded-full bg-emerald-400 pulse-dot';
       if (label) {
-        label.innerText = 'Live Audio';
+        label.innerText = 'PipeWire Active';
         label.className = 'text-[11px] font-medium text-emerald-400';
-      }
-
-      try {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-          audioContext = new (window.AudioContext || window.webkitAudioContext)();
-          const source = audioContext.createMediaStreamSource(audioStream);
-          analyserNode = audioContext.createAnalyser();
-          analyserNode.fftSize = 64;
-          analyserNode.smoothingTimeConstant = 0.8;
-          source.connect(analyserNode);
-        }
-      } catch (err) {
-        console.warn('Browser mic capture not enabled, using synchronized event waveform simulation:', err);
       }
 
       renderWaveformLoop();
@@ -346,41 +335,46 @@
       const barW = 3;
       const spacing = (w - (NUM_BARS * barW)) / (NUM_BARS - 1);
 
-      let freqData = new Uint8Array(32);
-      if (analyserNode) {
-        analyserNode.getByteFrequencyData(freqData);
-      }
-
       const now = Date.now();
       const timeSinceSpike = (now - lastAudioSpikeTime) / 1000;
       const spikeFactor = Math.max(0, 1 - timeSinceSpike * 2);
 
       for (let i = 0; i < NUM_BARS; i++) {
+        const centerDist = Math.abs(i - (NUM_BARS / 2)) / (NUM_BARS / 2);
+        const barMultiplier = 1.0 - (centerDist * 0.4);
+        
         let targetHeight = 2;
-        if (analyserNode && audioStream) {
-          const binVal = freqData[i + 1] || 0;
-          targetHeight = Math.max(2, (binVal / 255) * (h - 2));
+        if (serverAudioLevel > 0.01) {
+          targetHeight = 2 + (serverAudioLevel * (h - 2) * barMultiplier) + Math.sin(now / 70 + i * 0.8) * 2;
         } else {
-          const wave = Math.sin(now / 150 + i * 0.6) * 3;
-          targetHeight = 3 + wave + (spikeFactor * 10 * Math.sin(i * 0.5 + now / 80));
-          targetHeight = Math.max(2, Math.min(h - 2, targetHeight));
+          const idleWave = Math.sin(now / 180 + i * 0.5) * 2;
+          targetHeight = 2.5 + idleWave + (spikeFactor * 8 * Math.sin(i * 0.5 + now / 80));
         }
+        targetHeight = Math.max(2, Math.min(h - 2, targetHeight));
 
-        barHeights[i] += (targetHeight - barHeights[i]) * 0.35;
+        barHeights[i] += (targetHeight - barHeights[i]) * 0.4;
 
         const x = i * (barW + spacing);
         const barH = Math.max(2, barHeights[i]);
         const y = (h - barH) / 2;
 
         const grad = waveCtx.createLinearGradient(0, y, 0, y + barH);
-        grad.addColorStop(0, '#34d399'); // emerald-400
-        grad.addColorStop(1, '#0d9488'); // teal-600
+        if (serverAudioChannel === 'local') {
+          grad.addColorStop(0, '#34d399'); // emerald-400 (Local Mic)
+          grad.addColorStop(1, '#0d9488'); // teal-600
+        } else {
+          grad.addColorStop(0, '#fbbf24'); // amber-400 (Remote Loopback)
+          grad.addColorStop(1, '#d97706'); // amber-600
+        }
 
         waveCtx.fillStyle = grad;
         waveCtx.beginPath();
         waveCtx.roundRect(x, y, barW, barH, 1.5);
         waveCtx.fill();
       }
+
+      // Smoothly decay server audio level
+      serverAudioLevel = Math.max(0, serverAudioLevel * 0.88);
 
       animFrameId = requestAnimationFrame(renderWaveformLoop);
     }
@@ -392,16 +386,7 @@
     function stopAudioWaveform() {
       isVisualizerActive = false;
       if (animFrameId) cancelAnimationFrame(animFrameId);
-
-      if (audioStream) {
-        audioStream.getTracks().forEach(t => t.stop());
-        audioStream = null;
-      }
-      if (audioContext && audioContext.state !== 'closed') {
-        audioContext.close();
-        audioContext = null;
-      }
-      analyserNode = null;
+      serverAudioLevel = 0;
 
       const dot = document.getElementById('waveformDot');
       const label = document.getElementById('waveformLabel');
@@ -573,6 +558,9 @@
         const msg = JSON.parse(event.data);
         if (msg.type === 'transcript_segment') {
           appendTranscript(msg);
+        } else if (msg.type === 'audio_level') {
+          serverAudioLevel = Math.max(serverAudioLevel, msg.level || 0);
+          serverAudioChannel = msg.channel || 'local';
         }
       };
 

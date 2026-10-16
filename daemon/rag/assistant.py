@@ -85,34 +85,47 @@ class LiveAssistant:
             )
 
         # 2. Retrieve from meeting transcripts (current session or recent sessions)
+        segs_to_search: list[dict[str, Any]] = []
         if session_id:
-            # Simple keyword or segment matching in current session
-            all_segs = await self.repository.get_transcript_segments(session_id)
-            if all_segs:
-                # Rank transcript segments by lexical / word overlap with query
-                query_words = set(query.lower().split())
-                scored_segs = []
-                for s in all_segs:
-                    seg_words = set(s["text"].lower().split())
-                    overlap = len(query_words.intersection(seg_words))
-                    if overlap > 0:
-                        scored_segs.append((overlap, s))
+            segs_to_search = await self.repository.get_transcript_segments(session_id)
+        else:
+            # If no session specified, search across the latest active or completed sessions
+            recent_sessions = await self.repository.list_sessions()
+            for s in recent_sessions[:3]:
+                s_segs = await self.repository.get_transcript_segments(s["id"])
+                segs_to_search.extend(s_segs)
 
-                scored_segs.sort(key=lambda x: x[0], reverse=True)
-                for _, seg in scored_segs[:top_k_transcripts]:
-                    ts = format_timestamp_ms(seg["start_ms"])
-                    tag = f"{ts} ({seg['speaker_label']})"
-                    context_blocks.append(
-                        f"[TRANSCRIPT UTTERANCE: ref: {tag}]\n\"{seg['text']}\""
+        if segs_to_search:
+            # Score transcript segments using query word overlap & Jaccard similarity
+            query_words = set(query.lower().split())
+            # Filter common punctuation and short stop words
+            clean_q_words = {w.strip("?,.!;:\"'()[]") for w in query_words if len(w) > 2}
+            scored_segs = []
+            for s in segs_to_search:
+                text_words = set(s["text"].lower().split())
+                clean_t_words = {w.strip("?,.!;:\"'()[]") for w in text_words if len(w) > 2}
+                overlap = len(clean_q_words.intersection(clean_t_words))
+                if overlap > 0:
+                    jaccard = overlap / len(clean_q_words.union(clean_t_words))
+                    # Score combines raw overlap count with proportional Jaccard similarity
+                    score = overlap + jaccard
+                    scored_segs.append((score, s))
+
+            scored_segs.sort(key=lambda x: x[0], reverse=True)
+            for seg_score, seg in scored_segs[:top_k_transcripts]:
+                ts = format_timestamp_ms(seg["start_ms"])
+                tag = f"{ts} ({seg['speaker_label']})"
+                context_blocks.append(
+                    f"[TRANSCRIPT UTTERANCE: ref: {tag}]\n\"{seg['text']}\""
+                )
+                citations.append(
+                    Citation(
+                        source_type="transcript",
+                        source_label=tag,
+                        text_snippet=seg["text"],
+                        score=min(1.0, seg_score),
                     )
-                    citations.append(
-                        Citation(
-                            source_type="transcript",
-                            source_label=tag,
-                            text_snippet=seg["text"],
-                            score=1.0,
-                        )
-                    )
+                )
 
         # 3. If no context found at all
         if not context_blocks:

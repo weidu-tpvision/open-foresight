@@ -163,10 +163,10 @@ Start the FastAPI daemon:
 Now open your browser to **[http://localhost:8000](http://localhost:8000)**.
 
 #### What you can do in the Web Studio:
-1. **Live Meeting Mode:** Click **Start Meeting** to stream real-time transcripts with `[Me]` and `[Remote]` speaker badges.
+1. **Live Meeting Mode:** Click **Start Meeting** to stream real-time transcripts with `[Me]` and `[Remote]` speaker badges. Includes a real-time PipeWire audio visualizer driven by server-side RMS telemetry (emerald for local microphone, amber for remote loopback) with zero browser permission prompts or ALSA/Pulse audio contention.
 2. **Raw Shorthand Notes:** Type hurried bullet points in the center editor (e.g. `- auth race condition, bob by thurs`). Every keystroke is automatically timestamped.
 3. **✨ Enrich with Gemma 4:** Click the enrich button to correlate your bullets with the conversation window and generate executive minutes with `[ref: MM:SS]` citations.
-4. **💬 Live Assistant RAG:** Chat with the assistant to query your meeting transcript and local documents simultaneously.
+4. **💬 Live Assistant RAG:** Chat with the assistant to query your meeting transcript and local documents simultaneously, featuring dual-grounding across both active session dialogues, historical cross-session discussions, and indexed markdown/PDF specifications.
 
 ---
 
