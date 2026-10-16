@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import httpx
 from typing import Optional, Any
@@ -24,6 +25,25 @@ class GemmaClient:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout_seconds
+        self._client: Optional[httpx.AsyncClient] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        if self._client is None or self._client.is_closed or self._loop != current_loop:
+            self._client = httpx.AsyncClient(timeout=self.timeout)
+            self._loop = current_loop
+        return self._client
+
+    async def close(self) -> None:
+        """Close persistent HTTP client session."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     async def generate(
         self,
@@ -47,25 +67,25 @@ class GemmaClient:
             payload["system"] = system_prompt
 
         url = f"{self.base_url}/api/generate"
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            try:
-                response = await client.post(url, json=payload)
-                response.raise_for_status()
-                data = response.json()
-                return data.get("response", "").strip()
-            except Exception as e:
-                logger.error(f"Error querying local Gemma 4 at {url}: {e}")
-                raise RuntimeError(f"Gemma 4 generation failed: {e}") from e
+        client = self._get_client()
+        try:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            return data.get("response", "").strip()
+        except Exception as e:
+            logger.error(f"Error querying local Gemma 4 at {url}: {e}")
+            raise RuntimeError(f"Gemma 4 generation failed: {e}") from e
 
     async def is_ready(self) -> bool:
         """Verify Ollama server connection and model availability."""
         url = f"{self.base_url}/api/tags"
+        client = self._get_client()
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                res = await client.get(url)
-                if res.status_code == 200:
-                    models = [m.get("name") for m in res.json().get("models", [])]
-                    return any(self.model in m for m in models)
-                return False
+            res = await client.get(url, timeout=5.0)
+            if res.status_code == 200:
+                models = [m.get("name") for m in res.json().get("models", [])]
+                return any(self.model in m for m in models)
+            return False
         except Exception:
             return False

@@ -121,10 +121,28 @@ Ensure Ollama is running (`curl http://localhost:11434/api/tags` returns your mo
 
 ## 🛠️ Usage
 
-### 1. Interactive Terminal Live Demo
+### 1. Unified Command-Line Interface (`open-foresight`)
+
+OpenForesight includes a unified CLI dispatcher:
+
+```bash
+# Launch the backend daemon and ambient Web Studio UI
+open-foresight serve
+
+# Run the interactive live terminal capture demo
+open-foresight demo
+
+# Batch index markdown or PDF documentation into the vector store
+open-foresight index [path/to/docs]
+```
+
+---
+
+### 2. Interactive Terminal Live Demo
 Test your microphone and desktop audio loopback immediately in the terminal:
 ```bash
 .venv/bin/python run_live_demo.py
+# or: open-foresight demo
 ```
 This script will:
 1. Scan and detect your PipeWire microphone and audio sink monitor.
@@ -134,11 +152,12 @@ This script will:
 
 ---
 
-### 2. Launching the Web Studio & Daemon
+### 3. Launching the Web Studio & Daemon
 
 Start the FastAPI daemon:
 ```bash
 .venv/bin/uvicorn daemon.app:app --host 0.0.0.0 --port 8000
+# or: open-foresight serve
 ```
 
 Now open your browser to **[http://localhost:8000](http://localhost:8000)**.
@@ -151,15 +170,15 @@ Now open your browser to **[http://localhost:8000](http://localhost:8000)**.
 
 ---
 
-### 3. Indexing a Local Knowledge Base
+### 4. Indexing a Local Knowledge Base
 
 You can index any folder of documents, specifications, or notes using the CLI tool:
 ```bash
 # Index a specific folder of markdown or PDF documents:
-.venv/bin/python index_workspace.py /path/to/your/documents
+open-foresight index /path/to/your/documents
 
 # Or index your current working directory:
-.venv/bin/python index_workspace.py .
+open-foresight index .
 ```
 
 Documents placed in the `docs/` folder are also automatically indexed in the background by the daemon's autonomous file watcher.
@@ -208,9 +227,10 @@ open-foresight/
 │   │   └── client.py                # Gemma 4 Ollama client
 │   ├── db/                          # Storage Layer
 │   │   ├── schema.sql               # SQLite DDL schema
-│   │   └── repository.py            # Async SQLite data access
-│   └── static/                      # Web Studio Frontend
-│       └── index.html               # Single-page meeting intelligence studio
+│   │   └── repository.py            # Async SQLite data access (PRAGMA foreign_keys = ON)
+│   └── static/                      # Ambient Web Studio UI
+│       ├── index.html               # Single-page meeting intelligence studio
+│       └── vendor/                  # Bundled offline libraries (Tailwind, Marked, DOMPurify)
 │
 ├── docs/                            # Watched knowledge directory (PDFs, Markdown)
 │   └── architecture_overview.md     # Out-of-the-box knowledge document
@@ -233,9 +253,10 @@ open-foresight/
 
 ## 🔒 Security, Privacy & Data Protection Invariants
 
-1. **Zero Cloud Egress:** All models, embeddings, audio streams, and databases remain strictly on `localhost`. No data is ever transmitted over external networks or third-party cloud APIs.
-2. **Absolute Data Confidentiality:**
+1. **Zero Cloud Egress:** All models, embeddings, audio streams, databases, and frontend scripts remain strictly on `localhost`. Front-end assets (Tailwind, Marked, DOMPurify) are fully vendored and served locally—zero outbound CDN or cloud requests are permitted.
+2. **Absolute Data Confidentiality & Integrity:**
    - **No Database Leaks:** Meeting databases (`foresight.db`), session histories, and vector store embeddings contain confidential discussion records and are strictly ignored by `.gitignore`. They are never staged or pushed to Git.
+   - **Foreign Key & Cascade Integrity:** Enforces `PRAGMA foreign_keys = ON` on all SQLite connections to prevent orphaned document chunks or meeting records.
    - **No Audio Uploads:** Raw audio captures, microphone streams, loopback monitor buffers (`*.wav`, `*.pcm`), and speech chunks never leave local memory/disk and are strictly barred from source control.
    - **No Personal Data Commits:** All configuration files and scripts use dynamic relative paths, ensuring user home directories, corporate hostnames, and credentials remain private.
 3. **Strict Provenance:** Generative outputs are constrained by prompt engineering and temporal windowing to cite exact timestamps `[ref: MM:SS]` in conversation audio.

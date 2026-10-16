@@ -127,8 +127,8 @@ open-foresight/
 
 ### 4.4 Subsystem 4: Local Knowledge Base & Vector RAG (`daemon/rag/`)
 - `DocumentChunker` in `chunker.py`: Splits Markdown by headers and sliding window (1,200 chars with 120 char overlap); extracts PDF text with page numbers via `pypdf`.
-- `EmbeddingGemmaClient` in `embeddings.py`: Batches text chunks to Ollama `/api/embed` with model `embeddinggemma-2` to produce exact 768-D dense vectors.
-- `VectorStore` in `vector_store.py`: Stores chunks in SQLite `document_chunks` with embeddings serialized as binary float32 blobs (`np.array().tobytes()`). Performs cosine similarity in SQLite memory.
+- `EmbeddingGemmaClient` in `embeddings.py`: Batches text chunks in slices of 32 to Ollama `/api/embed` with model `embeddinggemma-2` using persistent HTTP connection pooling to produce exact 768-D dense vectors.
+- `VectorStore` in `vector_store.py`: Stores chunks in SQLite `document_chunks` with embeddings serialized as binary float32 blobs (`np.array().tobytes()`). Performs BLAS-vectorized matrix-vector cosine similarity across stacked arrays in SQLite memory with incremental file modification checks.
 - `LiveAssistant` in `assistant.py`: Dual-grounding RAG that searches both local document chunks and live meeting transcript segments, prompting Gemma 4 to synthesize grounded answers with citation badges.
 
 ---

@@ -52,7 +52,7 @@ class VectorStore:
             await db.execute("PRAGMA foreign_keys = ON;")
             yield db
 
-    async def index_file(self, file_path: str | Path) -> dict:
+    async def index_file(self, file_path: str | Path, force: bool = False) -> dict:
         """Parse, chunk, embed, and store a document in the vector store."""
         path = Path(file_path).resolve()
         if not path.is_file():
@@ -65,15 +65,39 @@ class VectorStore:
         # Unique document ID derived from canonical path
         doc_id = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
 
+        # Incremental check: Skip re-indexing if file is unchanged
+        if not force:
+            async with self.connect() as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute(
+                    "SELECT modified_at, file_size_bytes, chunk_count FROM documents WHERE id = ?",
+                    (doc_id,),
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if row and row["modified_at"] == modified_at and row["file_size_bytes"] == file_size:
+                        logger.debug(f"Skipping unchanged document: {path.name}")
+                        return {
+                            "document_id": doc_id,
+                            "file_name": path.name,
+                            "file_path": str(path),
+                            "chunks_indexed": row["chunk_count"],
+                            "status": "skipped",
+                        }
+
         # Chunk the document in a worker thread (avoids blocking event loop on PDF parsing)
         chunks = await asyncio.to_thread(self.chunker.chunk_file, path)
         if not chunks:
             logger.warning(f"No text extracted from {path}")
             return {"document_id": doc_id, "file_name": path.name, "chunks_indexed": 0}
 
-        # Embed all chunks using EmbeddingGemma 2 (768-D)
+        # Embed chunks in mini-batches (e.g. 32 at a time) to prevent timeouts/memory spikes
         texts_to_embed = [c.text for c in chunks]
-        embeddings = await self.embed_client.embed_texts(texts_to_embed)
+        batch_size = 32
+        embeddings: list[list[float]] = []
+        for i in range(0, len(texts_to_embed), batch_size):
+            batch = texts_to_embed[i : i + batch_size]
+            batch_embs = await self.embed_client.embed_texts(batch)
+            embeddings.extend(batch_embs)
 
         async with self.connect() as db:
             # Insert or replace document metadata
@@ -198,22 +222,29 @@ class VectorStore:
         if not rows:
             return []
 
-        # 3. Compute cosine similarity across candidate vectors
-        candidates = []
-        for row in rows:
-            emb_blob = row["embedding"]
-            if not emb_blob:
-                continue
+        # 3. Vectorized cosine similarity computation across candidate vectors
+        valid_rows = [r for r in rows if r["embedding"]]
+        if not valid_rows:
+            return []
 
-            chunk_arr = np.frombuffer(emb_blob, dtype=np.float32)
-            dot = np.dot(query_arr, chunk_arr)
-            norm_c = np.linalg.norm(chunk_arr)
-            if norm_c == 0.0:
-                score = 0.0
-            else:
-                score = float(dot / (norm_q * norm_c))
+        # Stack chunk vectors into (N, 768) matrix
+        matrix = np.frombuffer(
+            b"".join(r["embedding"] for r in valid_rows), dtype=np.float32
+        ).reshape(len(valid_rows), -1)
 
-            if score >= min_score:
+        # Vectorized dot products: (N,)
+        dots = np.dot(matrix, query_arr)
+        # Vectorized L2 norms: (N,)
+        norms_c = np.linalg.norm(matrix, axis=1)
+        # Avoid division by zero
+        denom = norms_c * norm_q
+        scores = np.where(denom > 0.0, dots / denom, 0.0)
+
+        candidates: list[SearchResult] = []
+        for idx, score in enumerate(scores):
+            score_val = float(score)
+            if score_val >= min_score:
+                row = valid_rows[idx]
                 candidates.append(
                     SearchResult(
                         chunk_id=row["id"],
@@ -223,7 +254,7 @@ class VectorStore:
                         section_title=row["section_title"],
                         page_number=row["page_number"],
                         text=row["text"],
-                        score=score,
+                        score=score_val,
                     )
                 )
 

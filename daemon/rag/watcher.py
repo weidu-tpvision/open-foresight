@@ -40,6 +40,31 @@ class KnowledgeFileHandler(FileSystemEventHandler):
         if not event.is_directory:
             self._handle_change(event.src_path)
 
+    def on_deleted(self, event: FileSystemEvent) -> None:
+        if not event.is_directory:
+            self._handle_delete(event.src_path)
+
+    def on_moved(self, event: FileSystemEvent) -> None:
+        if not event.is_directory:
+            if hasattr(event, "src_path"):
+                self._handle_delete(event.src_path)
+            if hasattr(event, "dest_path"):
+                self._handle_change(event.dest_path)
+
+    def _handle_delete(self, file_path_str: str) -> None:
+        import hashlib
+        path = Path(file_path_str).resolve()
+        doc_id = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
+        logger.info(f"Knowledge file deletion detected: {path.name}. Removing doc_id {doc_id}...")
+        future = asyncio.run_coroutine_threadsafe(
+            self.vector_store.delete_document(doc_id), self.loop
+        )
+        future.add_done_callback(
+            lambda f: logger.error(f"Error deleting {path.name}: {f.exception()}")
+            if f.exception()
+            else None
+        )
+
     def _handle_change(self, file_path_str: str) -> None:
         path = Path(file_path_str)
         if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
@@ -52,9 +77,14 @@ class KnowledgeFileHandler(FileSystemEventHandler):
         self._last_modified[file_path_str] = now
 
         logger.info(f"Knowledge file change detected: {path.name}. Triggering indexing...")
-        # Schedule indexing in asyncio event loop
-        asyncio.run_coroutine_threadsafe(
+        # Schedule indexing in asyncio event loop and log any errors
+        future = asyncio.run_coroutine_threadsafe(
             self.vector_store.index_file(path), self.loop
+        )
+        future.add_done_callback(
+            lambda f: logger.error(f"Error indexing {path.name}: {f.exception()}")
+            if f.exception()
+            else None
         )
 
 
